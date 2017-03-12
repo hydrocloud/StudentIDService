@@ -1,6 +1,7 @@
 import sys
 import json
 import flask
+import gevent
 import gevent.pywsgi
 import gevent.monkey
 import pymongo
@@ -12,6 +13,7 @@ import zhixue
 gevent.monkey.patch_all()
 
 app = flask.Flask(__name__)
+app_internal = flask.Flask(__name__)
 cfg = {}
 ctx = servicehub.Context("172.16.8.1:6619")
 db = pymongo.MongoClient("127.0.0.1", 27017).HydroCloud_StudentIDService
@@ -292,9 +294,39 @@ def on_root():
         user_status = user_status
     )
 
+@app_internal.route("/info/student", methods = ["POST"])
+def on_internal_info_student():
+    req = flask.request.get_json(force = True)
+    user_id = req.get("user_id", None)
+    if type(user_id) != str:
+        return flask.jsonify({
+            "err": 1,
+            "msg": "Invalid request"
+        })
+    
+    s = Student.get_by_user_id(user_id)
+    if s == None:
+        return flask.jsonify({
+            "err": 2,
+            "msg": "Student not found"
+        })
+    
+    return flask.jsonify({
+        "err": 0,
+        "msg": "OK",
+        "name": s.name,
+        "school_id": s.school_id,
+        "school_name": s.school_name,
+        "class_id": s.class_id,
+        "class_name": s.class_name
+    })
+
 ctx.register_with_priority("HydroCloud_StudentIDService", "http://" + cfg["service_addr"] + ":" + str(cfg["service_port"]), cfg["priority"], True)
+ctx.register_with_priority("HydroCloud_StudentIDService_Internal", "http://" + cfg["service_addr"] + ":" + str(cfg["internal_service_port"]), cfg["priority"], True)
 requests.post(ctx.get_resource_addr("HydroCloud_WebServiceDispatcher_Core") + "/register", json = {
     "domain": cfg["public_domain"],
     "service_name": "HydroCloud_StudentIDService"
 })
+
+gevent.spawn(lambda: gevent.pywsgi.WSGIServer(("0.0.0.0", cfg["internal_service_port"]), app_internal).serve_forever())
 gevent.pywsgi.WSGIServer(("0.0.0.0", cfg["service_port"]), app).serve_forever()

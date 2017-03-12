@@ -1,6 +1,7 @@
 {
     "service_addr": "172.16.9.6",
     "service_port": 4128,
+    "internal_service_port": 4129,
     "public_domain": "studentid.hydrocloud.net",
     "priority": 0
 }
