@@ -50,7 +50,7 @@ export default class Me extends React.Component {
         try {
             let r = JSON.parse(await network.makeRequest("POST", "/api/student/remove"));
             assert(r.err === 0);
-            window.user_info.status = 0;
+            window.user_info.verified = false;
             this.checkUserStatus();
             this.forceUpdate();
         } catch(e) {
@@ -75,10 +75,10 @@ export default class Me extends React.Component {
     }
 
     checkUserStatus() {
-        switch(window.user_info.status) {
-            case 0:
+        switch(window.user_info.verified) {
+            case false:
                 break;
-            case 1:
+            case true:
                 this.getStudentInfo();
                 break;
         }
@@ -90,8 +90,21 @@ export default class Me extends React.Component {
     
     render() {
         let body = "";
-        switch(window.user_info.status) {
-            case 0:
+        switch(window.user_info.role) {
+            case "student":
+                body = (
+                    <Card shadow={0} className="main-card">
+                        <h3>学生信息</h3>
+                        <div style={{textAlign: "left"}}>
+                            <p>姓名: {this.state.student.name}</p>
+                            <p>学校: {this.state.student.school_name}</p>
+                            <p>班级: {this.state.student.class_name}</p>
+                            <Button accent onClick={() => this.removeStudent()}>解除关联</Button>
+                        </div>
+                    </Card>
+                );
+                break;
+            default:
                 body = (
                     <Card shadow={0} className="main-card">
                         <h3>身份验证</h3>
@@ -117,19 +130,6 @@ export default class Me extends React.Component {
                         </form>
                         <div style={{display: this.state.doingZhixueLogin ? "block" : "none"}}>
                             <ProgressBar indeterminate />
-                        </div>
-                    </Card>
-                );
-                break;
-            case 1:
-                body = (
-                    <Card shadow={0} className="main-card">
-                        <h3>学生信息</h3>
-                        <div style={{textAlign: "left"}}>
-                            <p>姓名: {this.state.student.name}</p>
-                            <p>学校: {this.state.student.school_name}</p>
-                            <p>班级: {this.state.student.class_name}</p>
-                            <Button accent onClick={() => this.removeStudent()}>解除关联</Button>
                         </div>
                     </Card>
                 );

@@ -4,6 +4,7 @@ import { Card, Button, ProgressBar } from "react-mdl";
 
 import * as view from "./view.js";
 const network = require("./network.js");
+const user = require("./user.js");
 
 import Me from "./Me.js";
 
@@ -15,13 +16,29 @@ export default class Welcome extends React.Component {
         };
     }
 
+    async tryLoadSession() {
+        try {
+            let r = await network.makeRequest("POST", "/api/user/info");
+            r = JSON.parse(r);
+            if(r.err !== 0) {
+                return;
+            }
+            user.loadInfoIntoGlobal(r);
+            return view.dispatch(Me);
+        } catch(e) {
+            return;
+        }
+    }
+
     async login() {
+        this.tryLoadSession();
+
         const clientToken = await window.oneidentity.login(document.getElementById("login-container"));
 
         this.setState({ loggingIn: true });
         
         let r = await network.makeRequest("POST", "/api/user/login", {
-            "client_token": clientToken
+            client_token: clientToken
         });
         r = JSON.parse(r);
         if(r.err !== 0) {
@@ -32,11 +49,7 @@ export default class Welcome extends React.Component {
         if(r.err !== 0) {
             throw new Error(r.msg);
         }
-        window.user_info = {
-            id: r.user_id,
-            name: r.username,
-            status: r.user_status
-        };
+        user.loadInfoIntoGlobal(r);
         this.setState({ loggingIn: false });
         return view.dispatch(Me);
     }

@@ -7,15 +7,14 @@ import gevent.monkey
 import pymongo
 import requests
 import uuid
-import servicehub
 import zhixue
+import oneidentity_dc
 
 gevent.monkey.patch_all()
 
 app = flask.Flask(__name__)
 app_internal = flask.Flask(__name__)
 cfg = {}
-ctx = servicehub.Context("172.16.8.1:6619")
 db = pymongo.MongoClient("127.0.0.1", 27017).HydroCloud_StudentIDService
 
 with open(sys.argv[1], "rb") as f:
@@ -28,45 +27,13 @@ class Session:
         self.username = username
 
 class User:
-    def __init__(self, id = "", name = "", status = 0):
+    def __init__(self, id = "", name = "", role = "unknown", real_name = "", student_id = "", school_id = "", school_name = "", class_id = "", class_name = ""):
         self.id = id
         self.name = name
-        self.status = status
-    
-    @staticmethod
-    def get_by_id(id):
-        u = db.users.find_one({
-            "id": id
-        })
-        if u == None:
-            return None
-        return User(id = id, name = u["name"], status = u["status"])
-    
-    def update(self):
-        return db.users.update_one({
-            "id": self.id
-        }, {
-            "$set": {
-                "status": self.status
-            }
-        })
-    
-    def insert(self):
-        return db.users.insert_one({
-            "id": self.id,
-            "name": self.name,
-            "status": self.status
-        })
-    
-    def update_or_insert(self):
-        r = self.update()
-        if r.matched_count == 0:
-            self.insert()
 
-class Student:
-    def __init__(self, user_id = "", name = "", student_id = "", school_id = "", school_name = "", class_id = "", class_name = ""):
-        self.user_id = user_id
-        self.name = name
+        self.role = role
+
+        self.real_name = real_name
         self.student_id = student_id
 
         self.school_id = school_id
@@ -76,43 +43,22 @@ class Student:
         self.class_name = class_name
     
     @staticmethod
-    def get_by_user_id(id):
-        u = db.students.find_one({
-            "user_id": id
+    def get_by_id(id):
+        u = db.users.find_one({
+            "id": id
         })
         if u == None:
             return None
-        return Student(
-            user_id = id,
-            name = u["name"],
-            student_id = u["student_id"],
-            school_id = u["school_id"],
-            school_name = u["school_name"],
-            class_id = u["class_id"],
-            class_name = u["class_name"]
-        )
-    
-    @staticmethod
-    def load_from_zhixue_login_response(user_id, resp):
-        if resp["errorCode"] != 0:
-            raise Exception("Login failed")
-        r = resp["result"]
-        return Student(
-            user_id = user_id,
-            name = r["name"],
-            student_id = r["userInfo"]["studentNo"],
-            school_id = r["userInfo"]["school"]["schoolId"],
-            school_name = r["userInfo"]["school"]["schoolName"],
-            class_id = r["clazzInfo"]["id"],
-            class_name = r["clazzInfo"]["name"]
-        )
+        return User(id = id, name = u["name"], role = u["role"], real_name = u["real_name"], student_id = u["student_id"], school_id = u["school_id"], school_name = u["school_name"], class_id = u["class_id"], class_name = u["class_name"])
     
     def update(self):
-        return db.students.update_one({
-            "user_id": self.user_id
+        return db.users.update_one({
+            "id": self.id
         }, {
             "$set": {
                 "name": self.name,
+                "role": self.role,
+                "real_name": self.real_name,
                 "student_id": self.student_id,
                 "school_id": self.school_id,
                 "school_name": self.school_name,
@@ -122,9 +68,11 @@ class Student:
         })
     
     def insert(self):
-        return db.students.insert_one({
-            "user_id": self.user_id,
+        return db.users.insert_one({
+            "id": self.id,
             "name": self.name,
+            "role": self.role,
+            "real_name": self.real_name,
             "student_id": self.student_id,
             "school_id": self.school_id,
             "school_name": self.school_name,
@@ -137,10 +85,105 @@ class Student:
         if r.matched_count == 0:
             self.insert()
     
-    def remove(self):
-        return db.students.delete_one({
-            "user_id": self.user_id
+    def is_verified(self):
+        if self.real_name != None and self.real_name != "":
+            return True
+        return False
+    
+    def load_student_info_from_zhixue_login_response(self, resp):
+        if resp["errorCode"] != 0:
+            raise Exception("Login failed")
+        r = resp["result"]
+        self.real_name = r["name"]
+        self.student_id = r["userInfo"]["studentNo"]
+        self.school_id = r["userInfo"]["school"]["schoolId"]
+        self.school_name = r["userInfo"]["school"]["schoolName"]
+        self.class_id = r["clazzInfo"]["id"]
+        self.class_name = r["clazzInfo"]["name"]
+        self.role = "student"
+
+class Class:
+    def __init__(id = "", name = "", school_id = "", school_name = "", admins = []):
+        self.id = id
+        self.name = name
+        self.school_id = school_id
+        self.school_name = school_name
+        self.admins = admins
+    
+    @staticmethod
+    def get_by_id(id):
+        c = db.classes.find_one({
+            "id": id
         })
+        if c == None:
+            return None
+        return Class(
+            id = c["id"],
+            name = c["name"],
+            school_id = c["school_id"],
+            school_name = c["school_name"],
+            admins = c["admins"]
+        )
+    
+    def update(self):
+        return db.classes.update_one({
+            "id": self.id
+        }, {
+            "$set": {
+                "name": self.name,
+                "school_id": self.school_id,
+                "school_name": self.school_name,
+                "admins": self.admins
+            }
+        })
+    
+    def insert(self):
+        return db.classes.insert_one({
+            "id": self.id,
+            "name": self.name,
+            "school_id": self.school_id,
+            "school_name": self.school_name,
+            "admins": self.admins
+        })
+    
+    def update_or_insert(self):
+        r = self.update()
+        if r.matched_count == 0:
+            self.insert()
+        
+    def remove(self):
+        return db.classes.delete_one({
+            "id": self.id
+        })
+
+class DomainController(oneidentity_dc.DomainController):
+    def on_join(self, user_id, form):
+        u = User.get_by_id(user_id)
+        if u == None:
+            return {
+                "ok": False,
+                "msg": "请先登录 https://" + cfg["public_domain"] + " 完成注册"
+            }
+        
+        if u.school_name != "江苏省南通中学":
+            print(u.school_name)
+            return {
+                "ok": False,
+                "msg": "当前用户所在学校不受支持"
+            }
+
+        self.add_user(user_id)
+        return {
+            "ok": True
+        }
+    
+    def on_quit(self, user_id):
+        self.remove_user(user_id)
+        return {
+            "ok": True
+        }
+
+dc = DomainController(cfg["domain_token"])
 
 sessions = {}
 
@@ -188,7 +231,8 @@ def on_api_user_info():
         "msg": "OK",
         "user_id": sess.user_id,
         "username": sess.username,
-        "user_status": u.status
+        "role": u.role,
+        "verified": u.is_verified()
     })
 
 @app.route("/api/user/verify/zhixue", methods = ["POST"])
@@ -200,27 +244,25 @@ def on_api_user_verify_zhixue():
             "msg": "Session not found"
         })
     
+    u = User.get_by_id(sess.user_id)
+    
     r = zhixue.login(flask.request.form["username"], flask.request.form["password"])
     try:
-        student_info = Student.load_from_zhixue_login_response(sess.user_id, r)
+        u.load_student_info_from_zhixue_login_response(r)
     except:
         return flask.jsonify({
             "err": 2,
             "msg": "Login failed"
         })
     
-    student_info.update_or_insert()
-
-    u = User.get_by_id(sess.user_id)
-    u.status = 1
-    u.update()
+    u.update_or_insert()
 
     return flask.jsonify({
         "err": 0,
         "msg": "OK",
-        "name": student_info.name,
-        "school_name": student_info.school_name,
-        "class_name": student_info.class_name
+        "name": u.real_name,
+        "school_name": u.school_name,
+        "class_name": u.class_name
     })
 
 @app.route("/api/student/info", methods = ["POST"])
@@ -232,19 +274,25 @@ def on_api_student_info():
             "msg": "Session not found"
         })
     
-    s = Student.get_by_user_id(sess.user_id)
-    if s == None:
+    u = User.get_by_id(sess.user_id)
+    if u.is_verified() == False:
         return flask.jsonify({
             "err": 2,
-            "msg": "Student not found"
+            "msg": "User not verified"
+        })
+    
+    if u.role != "student":
+        return flask.jsonify({
+            "err": 3,
+            "msg": "User is not a student"
         })
     
     return flask.jsonify({
         "err": 0,
         "msg": "OK",
-        "name": s.name,
-        "school_name": s.school_name,
-        "class_name": s.class_name
+        "name": u.real_name,
+        "school_name": u.school_name,
+        "class_name": u.class_name
     })
 
 @app.route("/api/student/remove", methods = ["POST"])
@@ -256,17 +304,20 @@ def on_api_student_remove():
             "msg": "Session not found"
         })
 
-    s = Student.get_by_user_id(sess.user_id)
-    if s == None:
+    u = User.get_by_id(sess.user_id)
+    if u.is_verified() == False:
         return flask.jsonify({
             "err": 2,
-            "msg": "Student not found"
+            "msg": "User not verified"
         })
     
-    s.remove()
-
-    u = User.get_by_id(sess.user_id)
-    u.status = 0
+    if u.role != "student":
+        return flask.jsonify({
+            "err": 3,
+            "msg": "User is not a student"
+        })
+    
+    u.role = "unknown"
     u.update()
 
     return flask.jsonify({
@@ -276,23 +327,7 @@ def on_api_student_remove():
 
 @app.route("/")
 def on_root():
-    token = flask.request.cookies.get("token", None)
-    user_id = ""
-    username = ""
-    user_status = 0
-    if token != None:
-        sess = sessions.get(token, None)
-        if sess != None:
-            user_id = sess.user_id
-            username = sess.username
-            u = User.get_by_id(sess.user_id)
-            user_status = u.status
-    
-    return flask.render_template("general.html",
-        user_id = user_id,
-        username = username,
-        user_status = user_status
-    )
+    return flask.render_template("general.html")
 
 @app_internal.route("/info/student", methods = ["POST"])
 def on_internal_info_student():
@@ -304,29 +339,23 @@ def on_internal_info_student():
             "msg": "Invalid request"
         })
     
-    s = Student.get_by_user_id(user_id)
-    if s == None:
+    u = User.get_by_id(user_id)
+    if u == None:
         return flask.jsonify({
             "err": 2,
-            "msg": "Student not found"
+            "msg": "User not found"
         })
     
     return flask.jsonify({
         "err": 0,
         "msg": "OK",
-        "name": s.name,
-        "school_id": s.school_id,
-        "school_name": s.school_name,
-        "class_id": s.class_id,
-        "class_name": s.class_name
+        "name": u.real_name,
+        "school_id": u.school_id,
+        "school_name": u.school_name,
+        "class_id": u.class_id,
+        "class_name": u.class_name
     })
 
-ctx.register_with_priority("HydroCloud_StudentIDService", "http://" + cfg["service_addr"] + ":" + str(cfg["service_port"]), cfg["priority"], True)
-ctx.register_with_priority("HydroCloud_StudentIDService_Internal", "http://" + cfg["service_addr"] + ":" + str(cfg["internal_service_port"]), cfg["priority"], True)
-requests.post(ctx.get_resource_addr("HydroCloud_WebServiceDispatcher_Core") + "/register", json = {
-    "domain": cfg["public_domain"],
-    "service_name": "HydroCloud_StudentIDService"
-})
-
+gevent.spawn(lambda: dc.run())
 gevent.spawn(lambda: gevent.pywsgi.WSGIServer(("0.0.0.0", cfg["internal_service_port"]), app_internal).serve_forever())
 gevent.pywsgi.WSGIServer(("0.0.0.0", cfg["service_port"]), app).serve_forever()
