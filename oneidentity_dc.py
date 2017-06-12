@@ -1,6 +1,7 @@
 import requests
 import json
 import time
+import threading
 
 ONEIDENTITY_PREFIX = "https://oneidentity.me"
 
@@ -32,39 +33,55 @@ class DomainController:
         }).json()
         return resp
     
-    def run(self):
-        while True:
+    def poll_once(self):
+        try:
+            print("[oneidentity_dc] Polling...")
+            resp = requests.post(ONEIDENTITY_PREFIX + "/services/api/domain/controller/poll", data = {
+                "token": self.token
+            }).json()
+
+            raw_data = resp["update"]
+            if raw_data == None:
+                return
+            
+            req_id = raw_data["id"]
+            data = raw_data["data"]
+            
+            result = {}
+
             try:
-                print("[oneidentity_dc] Polling...")
-                resp = requests.post(ONEIDENTITY_PREFIX + "/services/api/domain/controller/poll", data = {
-                    "token": self.token
-                }).json()
-
-                data = resp["update"]
-                if data == None:
-                    continue
-                
-                result = {}
-
-                try:
-                    if data["action"] == "join":
-                        result = self.on_join(data["userId"], data.get("form", None))
-                    elif data["action"] == "quit":
-                        result = self.on_quit(data["userId"])
-                    else:
-                        result = {
-                            "ok": False,
-                            "msg": "Action not implemented"
-                        }
-                except:
+                if data["action"] == "join":
+                    result = self.on_join(data["userId"], data.get("form", None))
+                elif data["action"] == "quit":
+                    result = self.on_quit(data["userId"])
+                else:
                     result = {
                         "ok": False,
-                        "msg": "Exception caught during request handling"
+                        "msg": "Action not implemented"
                     }
-                
-                requests.post(ONEIDENTITY_PREFIX + "/services/api/domain/controller/send_response", data = {
-                    "token": self.token,
-                    "data": json.dumps(result)
-                })
             except:
-                time.sleep(3)
+                result = {
+                    "ok": False,
+                    "msg": "Exception caught during request handling"
+                }
+            
+            requests.post(ONEIDENTITY_PREFIX + "/services/api/domain/controller/send_response", data = {
+                "token": self.token,
+                "data": json.dumps({
+                    "id": req_id,
+                    "data": result
+                })
+            })
+
+            return self.poll_once()
+        except:
+            print("[oneidentity_dc] Exception caught during polling")
+            time.sleep(3)
+            return self.poll_once()
+    
+    def run(self):
+        while True:
+            t = threading.Thread(target = self.poll_once)
+            t.daemon = True
+            t.start()
+            time.sleep(20)
