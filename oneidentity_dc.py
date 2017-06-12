@@ -33,6 +33,14 @@ class DomainController:
         }).json()
         return resp
     
+    def get_user_basic_info(self, user_id):
+        resp = requests.post(ONEIDENTITY_PREFIX + "/public/user/get_basic_info_by_id", data = {
+            "userId": user_id
+        }).json()
+        if resp["err"] != 0:
+            raise Exception(resp["msg"])
+        return resp["info"]
+    
     def poll_once(self):
         try:
             print("[oneidentity_dc] Polling...")

@@ -157,25 +157,52 @@ class Class:
         })
 
 class DomainController(oneidentity_dc.DomainController):
-    def on_join(self, user_id, form):
-        u = User.get_by_id(user_id)
-        if u == None:
-            return {
-                "ok": False,
-                "msg": "请先登录 https://" + cfg["public_domain"] + " 完成注册"
-            }
-        
+    def verify_school_and_add_user(self, u):
         if u.school_name != "江苏省南通中学":
-            print(u.school_name)
             return {
                 "ok": False,
                 "msg": "当前用户所在学校不受支持"
             }
-
-        self.add_user(user_id)
+        self.add_user(u.id)
         return {
             "ok": True
         }
+
+    def on_join(self, user_id, form):
+        u = User.get_by_id(user_id)
+        if u == None:
+            user_info = self.get_user_basic_info(user_id)
+            u = User(id = user_id, name = user_info["name"])
+            u.insert()
+        if form == None:
+            if u.is_verified() == False:
+                return {
+                    "ok": False,
+                    "form": [
+                        {
+                            "name": "zhixue_username",
+                            "description": "智学网用户名",
+                            "type": "text"
+                        },
+                        {
+                            "name": "zhixue_password",
+                            "description": "智学网密码",
+                            "type": "password"
+                        }
+                    ]
+                }
+            return self.verify_school_and_add_user(u)
+        else:
+            r = zhixue.login(form["zhixue_username"], form["zhixue_password"])
+            try:
+                u.load_student_info_from_zhixue_login_response(r)
+            except:
+                return {
+                    "ok": False,
+                    "msg": "无法使用提供的用户名和密码登录智学网"
+                }
+            u.update_or_insert()
+            return self.verify_school_and_add_user(u)
     
     def on_quit(self, user_id):
         self.remove_user(user_id)
