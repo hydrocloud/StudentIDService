@@ -41,13 +41,15 @@ class User:
 
         self.class_id = class_id
         self.class_name = class_name
+
+        self.disabled = False
     
     @staticmethod
     def get_by_id(id):
         u = db.users.find_one({
             "id": id
         })
-        if u == None:
+        if u == None or u.get("disabled", False) == True:
             return None
         return User(id = id, name = u["name"], role = u["role"], real_name = u["real_name"], student_id = u["student_id"], school_id = u["school_id"], school_name = u["school_name"], class_id = u["class_id"], class_name = u["class_name"])
     
@@ -63,7 +65,8 @@ class User:
                 "school_id": self.school_id,
                 "school_name": self.school_name,
                 "class_id": self.class_id,
-                "class_name": self.class_name
+                "class_name": self.class_name,
+                "disabled": self.disabled
             }
         })
     
@@ -77,13 +80,18 @@ class User:
             "school_id": self.school_id,
             "school_name": self.school_name,
             "class_id": self.class_id,
-            "class_name": self.class_name
+            "class_name": self.class_name,
+            "disabled": self.disabled
         })
     
     def update_or_insert(self):
         r = self.update()
         if r.matched_count == 0:
             self.insert()
+    
+    def remove(self):
+        self.disabled = True
+        self.update_or_insert()
     
     def is_verified(self):
         if self.real_name != None and self.real_name != "":
@@ -173,7 +181,7 @@ class DomainController(oneidentity_dc.DomainController):
         if u == None:
             user_info = self.get_user_basic_info(user_id)
             u = User(id = user_id, name = user_info["name"])
-            u.insert()
+            u.update_or_insert()
         if form == None:
             if u.is_verified() == False:
                 return {
@@ -230,7 +238,7 @@ def on_api_user_login():
     u = User.get_by_id(r["userId"])
     if u == None:
         u = User(id = r["userId"], name = r["username"])
-        u.insert()
+        u.update_or_insert()
     
     sess = Session(r["userId"], r["username"])
     sessions[sess.token] = sess
@@ -344,8 +352,7 @@ def on_api_student_remove():
             "msg": "User is not a student"
         })
     
-    u.role = "unknown"
-    u.update()
+    u.remove()
 
     return flask.jsonify({
         "err": 0,
